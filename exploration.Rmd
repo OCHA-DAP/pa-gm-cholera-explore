@@ -1,0 +1,81 @@
+---
+title: "Cholera data exploration"
+author: "Seth Caldwell"
+date: "2023-05-15"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE, include = TRUE)
+
+library(tidyverse)
+library(gghdx)
+gghdx()
+
+output_dir <- file.path(
+  Sys.getenv("CERF_GM_DIR"),
+  "cholera_exploration",
+  "outputs"
+)
+
+df_cerf <- read_csv(
+  file.path(
+    output_dir,
+    "cerf_cholera_allocations.csv"
+  )
+)
+
+df_cholera <- read_csv(
+  file.path(
+    output_dir,
+    "cholera_cases.csv"
+  )
+)
+
+```
+
+## Cholera exploration
+
+CERF has been scraping data from WHO AFRO emergency bulletins. We want to see
+how this data compares with CERF allocations, as we don't currently have an
+additional source of cholera case data.
+
+```{r, fig.height = 8}
+ggplot() +
+  geom_line(
+    data = df_cholera,
+    mapping = aes(
+      x = date,
+      y = cholera_cases
+    )
+  ) +
+  geom_segment(
+    data = df_cerf,
+    mapping = aes(
+      x = date,
+      xend = date,
+    ),
+    y = 0,
+    yend = Inf
+  ) +
+  facet_wrap(
+    ~ country,
+    scales = "free_x"
+  ) +
+  scale_y_continuous(
+    labels = scales::label_comma()
+  ) +
+  scale_x_date(
+    date_breaks = "2 years",
+    date_labels = "%Y"
+  ) +
+  labs(
+    x = "",
+    y = "Cholera cases",
+    title = "Cholera cases and CERF cholera allocations",
+    subtitle = "CERF allocations as vertical lines"
+  ) +
+  theme(
+    strip.text.x = element_text(size = 10),
+  )
+```
