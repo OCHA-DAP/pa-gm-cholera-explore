@@ -60,7 +60,8 @@ ggplot() +
   ) +
   facet_wrap(
     ~ country,
-    scales = "free_x"
+    ncol = 3,
+    scales = "free_y"
   ) +
   scale_y_continuous(
     labels = scales::label_comma()
@@ -77,5 +78,153 @@ ggplot() +
   ) +
   theme(
     strip.text.x = element_text(size = 10),
+  )
+```
+
+From the above, we can definitely see a relationship between cholera cases and CERF allocations (obviously) and it isn't always the case that CERF is allocating after to the peak of an outbreak. What if we activated if there was a first case reported after no cases and once the total caseload reaches 1,000, 5,000 or 10,000 cases.
+
+```{r, fig.height = 8}
+# alert helper function
+# only generate alert when boundary crossed from below
+lim_alert <- function(x, lim) {
+  x >= lim & lag(x) < lim
+}
+
+# create alerts dataset
+df_alert <- df_cholera %>%
+  group_by(
+    iso3
+  ) %>%
+  mutate(
+    alert_first = cholera_cases > 0 & lag(cholera_cases) == 0,
+    alert_1k = lim_alert(cholera_cases, 1000),
+    alert_5k = lim_alert(cholera_cases, 5000),
+    alert_10k = lim_alert(cholera_cases, 10000)
+  ) %>%
+  rowwise() %>%
+  mutate(
+    alert_any = any(c_across(starts_with("alert")))
+  ) %>%
+  ungroup()
+
+# plot the results
+ggplot() +
+  geom_line(
+    data = df_cholera,
+    mapping = aes(
+      x = date,
+      y = cholera_cases
+    )
+  ) +
+  geom_segment(
+    data = df_alert %>% filter(alert_any),
+    mapping = aes(
+      x = date,
+      xend = date,
+    ),
+    y = 0,
+    yend = Inf
+  ) +
+  facet_wrap(
+    ~ country,
+    ncol = 3,
+    scales = "free_y"
+  ) +
+  scale_y_continuous(
+    labels = scales::label_comma()
+  ) +
+  scale_x_date(
+    date_breaks = "2 years",
+    date_labels = "%Y"
+  ) +
+  labs(
+    x = "",
+    y = "Cholera cases",
+    title = "Cholera cases and potential alerts",
+    subtitle = "Alerts on vertical lines"
+  ) +
+  theme(
+    strip.text.x = element_text(size = 10),
+  )
+```
+Here, the alerts are potentially too frequent in some cases, and not always due to rapid rises in caseload, such as in Ethiopia and Mozambique. Let's limit the alerts to only happening if that particular alert also hasn't activated in the past month, to reduce this frequency, but still allow rapid alerts if the rise in caseloads is particularly rapid or alarming.
+
+```{r, fig.height = 8}
+df_alert_reduced <- df_alert %>%
+  mutate(
+    across(
+      .cols = alert_first:alert_10k,
+      .fns = ~ zoo::rollsumr(x = .x, k = 30, fill = 0) == 1 & .x
+    )
+  ) %>%
+  rowwise() %>%
+  mutate(
+    alert_any = any(c_across(alert_first:alert_10k))
+  ) %>%
+  ungroup()
+
+# plot the results
+p_alerts <- ggplot() +
+  geom_line(
+    data = df_cholera,
+    mapping = aes(
+      x = date,
+      y = cholera_cases
+    )
+  ) +
+  geom_segment(
+    data = df_alert_reduced %>% filter(alert_any),
+    mapping = aes(
+      x = date,
+      xend = date,
+    ),
+    y = 0,
+    yend = Inf
+  ) +
+  facet_wrap(
+    ~ country,
+    ncol = 3,
+    scales = "free_y"
+  ) +
+  scale_y_continuous(
+    labels = scales::label_comma()
+  ) +
+  scale_x_date(
+    date_breaks = "2 years",
+    date_labels = "%Y"
+  ) +
+  labs(
+    x = "",
+    y = "Cholera cases",
+    title = "Cholera cases and potential alerts",
+    subtitle = "Alerts on vertical lines (only if not alerted in past 30 days)"
+  ) +
+  theme(
+    strip.text.x = element_text(size = 10),
+  )
+```
+
+So, it seems like we would not be activating particularly frequently. And the frequency
+of alerts as designed relates to faster increases in cases which often grow much
+further. But let's test this, and also see how these alerts relate to CERF allocations
+when they were made.
+
+First, just look at the simple relationship.
+
+```{r, fig.height = 8}
+p_alerts +
+  geom_segment(
+    data = df_cerf,
+    mapping = aes(
+      x = date,
+      xend = date,
+    ),
+    y = 0,
+    yend = Inf,
+    color = hdx_hex("mint-hdx"),
+    linewidth = 1
+  ) +
+  labs(
+    subtitle = "Alerts in black, CERF allocations in green"
   )
 ```
