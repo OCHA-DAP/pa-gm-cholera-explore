@@ -225,6 +225,7 @@ p_alerts +
     linewidth = 1
   ) +
   labs(
+    title = "Cholera cases, potential alerts, and CERF allocations",
     subtitle = "Alerts in black, CERF allocations in green"
   )
 ```
@@ -281,14 +282,14 @@ ggplot(
     xmax = 0,
     ymin = -Inf,
     ymax = Inf,
-    fill = hdx_hex("tomato-light")
+    fill = hdx_hex("sapphire-light")
   ) +
   geom_rect(
     xmin = 0,
     xmax = Inf,
     ymin = -Inf,
     ymax = Inf,
-    fill = hdx_hex("sapphire-light")
+    fill = hdx_hex("tomato-light")
   ) +
   geom_text_hdx(
     aes(
@@ -474,3 +475,71 @@ df_alert %>%
   )
   
 ```
+
+It can still be hard to see the trends above, so let's simply look at the percent of alerts that are followed by another alert. That is, what % of alerts for the 1st case of cholera eventually see a future alert for 1,000 cases and so on.
+
+```{r, fig.height = 2}
+df_alert %>%
+    group_by(iso3) %>%
+    mutate(
+        across(
+            .cols = alert_1k:alert_10k,
+            .fns = \(x) {
+                zoo::rollapplyr(
+                    data = x,
+                    width = 26,
+                    FUN = any,
+                    na.rm = TRUE,
+                    align = "left",
+                    fill = NA,
+                    partial = TRUE
+                )
+            },
+            .names = "{.col}_6_months"
+        )
+    ) %>%
+  pivot_longer(
+    alert_first:alert_10k,
+    names_prefix = "alert_",
+    names_to = "alert_type",
+    values_to = "alert"
+  ) %>%
+  mutate(
+    alert_next_6_months = case_when(
+      alert_type == "first" ~ alert_1k_6_months,
+      alert_type == "1k" ~ alert_5k_6_months,
+      alert_type == "5k" ~ alert_10k_6_months
+    ),
+    alert_type = factor(alert_type, levels = c("first", "1k", "5k"))
+  ) %>%
+  filter(
+    alert,
+    !is.na(alert_next_6_months)
+  ) %>%
+  group_by(
+    alert_type
+  ) %>%
+  summarize(
+    percent_6_months = sum(alert_next_6_months) / n()
+  ) %>%
+  ggplot(
+    aes(
+      y = alert_type,
+      x = percent_6_months
+    )
+  ) +
+  geom_bar(
+    stat = "identity"
+  ) +
+  scale_x_continuous(
+    labels = scales::label_percent()
+  ) +
+  labs(
+    x = "% of alerts that escalated to the next alert",
+    y = "",
+    title = "Alerts that escalated in 6 months to the next alert",
+    subtitle = "e.g. first case alert followed by 1k alert after 3 months"
+  )
+```
+
+Above, we can see that 40% of alerts from a first case escalate in the next 6 months eventually to over 1,000 cases. Of course, we don't want to interpret these directly as true or false positives, but that 40% (and the increasing percents at higher levels) are quite high and indicate the value of alerting across these levels to ensure CERF is aware of any onsets or escalations.
