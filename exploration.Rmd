@@ -228,3 +228,249 @@ p_alerts +
     subtitle = "Alerts in black, CERF allocations in green"
   )
 ```
+
+```{r}
+# get alerts in long format
+df_alerts_long <- df_alert_reduced %>%
+  filter(
+    alert_any
+  ) %>%
+  select(
+    -country
+  ) %>%
+  pivot_longer(
+    alert_first:alert_10k,
+    names_prefix = "alert_"
+  ) %>%
+  filter(
+    value
+  )
+
+# connect with the CERF data
+df_days_cerf <- left_join(
+  rename(df_cerf, cerf_date = date),
+  df_alerts_long,
+  by = "iso3",
+  relationship = "many-to-many"
+) %>%
+  filter(
+    abs(cerf_date - date) <= 180
+  ) %>%
+  mutate(
+    days_from_allocation = date - cerf_date
+  ) %>%
+  group_by(cerf_date) %>%
+  mutate(
+    earliest_day = min(days_from_allocation)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    name = ifelse(name == "first", "1st", name),
+    y = dense_rank(desc(earliest_day))
+  )
+
+ggplot(
+  data = df_days_cerf,
+  mapping = aes(
+    x = days_from_allocation,
+    y = y
+  )
+) +
+  geom_rect(
+    xmin = -Inf,
+    xmax = 0,
+    ymin = -Inf,
+    ymax = Inf,
+    fill = hdx_hex("tomato-light")
+  ) +
+  geom_rect(
+    xmin = 0,
+    xmax = Inf,
+    ymin = -Inf,
+    ymax = Inf,
+    fill = hdx_hex("sapphire-light")
+  ) +
+  geom_text_hdx(
+    aes(
+      label = country
+    ),
+    color = "white",
+    x = 0
+  ) +
+  geom_point(
+    size = 8,
+    color = hdx_hex("gray-dark")
+  ) +
+  geom_text_hdx(
+    aes(
+      label = name
+    ),
+    color = "white"
+  ) +
+  labs(
+    y = "",
+    x = "Days from CERF allocation",
+    title = "Alerts relative to CERF allocation"
+  ) +
+  theme(
+    axis.text.y = element_blank()
+  ) +
+  scale_x_continuous()
+```
+Overall, we can see that our alerts would have activated prior to nearly all CERF allocations. There are some outliers, such as in the DRC but looking at that country, it's unclear how and when outbreaks are calculated in the data CERF is scraping. Overall, we should feel pretty confident that we have some signal prior to activation.
+
+```{r}
+df_days_cerf %>%
+  group_by(y, emergency_type, amount) %>%
+  summarize(
+    min_days = min(days_from_allocation),
+    .groups = "drop"
+  ) %>%
+  ggplot(
+    aes(
+      x = min_days,
+      y = amount,
+      color = emergency_type
+    )
+  ) +
+  geom_point() +
+  scale_y_continuous_hdx(
+    labels = scales::label_dollar()
+  ) +
+  expand_limits(y = 0) +
+  scale_x_continuous() +
+  coord_cartesian(
+    clip = "off"
+  ) +
+  labs(
+    y = "CERF allocation",
+    x = "Time of first alert relative to CERF allocation",
+    title = "Cholera alerts relative to CERF allocation size",
+    color = "Emergency type"
+  )
+```
+We can see that the alerts also generate earliest relative to the largest CERF allocations. This makes sense, as the longer CERF takes to respond, the more likely that any response would be to a much more widesrpread outbreak. Thus, the potential for speeding up allocations to new outbreaks by notifying CERF of their occurrence could have potentially high value.
+
+```{r}
+df_alert %>%
+  group_by(iso3) %>%
+  mutate(
+    cases_max_26weeks = zoo::rollapply(
+      data = cholera_cases,
+      width = 26,
+      FUN = max,
+      na.rm = TRUE,
+      fill = NA, 
+      align = "left",
+      partial = TRUE
+    )
+  ) %>%
+  ungroup() %>%
+  pivot_longer(
+    alert_first:alert_10k,
+    names_prefix = "alert_",
+    names_to = "alert_type",
+    values_to = "alert"
+  ) %>%
+  filter(
+    alert
+  ) %>%
+  mutate(
+    alert_type = factor(alert_type, levels = c("first", "1k", "5k", "10k"))
+  ) %>%
+  ggplot(
+    aes(
+      x = cases_max_26weeks
+    )
+  ) +
+  geom_histogram(
+    bins = 30
+  ) +
+  geom_vline(
+    data = data.frame(
+      cases_max_26_weeks = c(1000, 5000, 10000),
+      alert_type = factor(c("1k", "5k", "10k"), levels = c("first", "1k", "5k", "10k"))
+    ),
+    aes(
+      xintercept = cases_max_26_weeks
+    ),
+    color = "black"
+  ) +
+  facet_wrap(
+    ~alert_type,
+    scales = "free_y"
+  ) +
+  scale_x_continuous(
+    labels = scales::label_comma()
+  ) +
+  labs(
+    y = "",
+    x = "# of cases",
+    title = "Maximum # of cases in the 6 months following an alert",
+    subtitle = "Initial alert threshold in black"
+  )
+```
+
+From the above, it's clear that once an alert threshold reaches 5k or 10k, the
+cholera cases generally tend to grow exponentially larger. This is less the case
+for when there is the first cholera case and slightly less so for 1k threshold,
+but still a relatively high percent. Let's have a look at those actual trends
+from the date of alert to 6 months later
+
+```{r, warning = FALSE}
+df_alert %>%
+  pivot_longer(
+    alert_first:alert_10k,
+    names_prefix = "alert_",
+    names_to = "alert_type",
+    values_to = "alert"
+  ) %>%
+  group_by(
+    iso3, alert_type
+  ) %>%
+  mutate(
+    alert_6_months = zoo::rollapply(
+      data = alert,
+      width = 26,
+      FUN = any,
+      na.rm = TRUE,
+      align = "right",
+      fill = NA,
+      partial = TRUE
+    ),
+    alert_group = paste(iso3, cumsum(!alert_6_months))
+  ) %>%
+  filter(
+    alert_6_months
+  ) %>%
+  group_by(
+    alert_group
+  ) %>%
+  mutate(
+    day = row_number() - 1,
+    alert_type = factor(alert_type, levels = c("first", "1k", "5k", "10k"))
+  ) %>%
+  ggplot(
+    aes(
+      x = day,
+      y = cholera_cases,
+      group = alert_group
+    )
+  ) +
+  geom_line(
+    alpha = 0.2
+  ) +
+  facet_wrap(
+    ~alert_type
+  ) +
+  scale_y_continuous_hdx(
+    limits = c(0, 30000),
+    labels = scales::label_comma()
+  ) +
+  labs(
+    y = "Cholera cases",
+    x = "Days since alert",
+    title = "Cholera case trends following alert"
+  )
+  
+```
