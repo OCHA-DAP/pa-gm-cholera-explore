@@ -105,8 +105,7 @@ output$priority <- renderPlot({
              x = "Week", y = "Total Cases", color = "Priority Level") + 
         scale_color_manual(values = c("Preparedness" = "#3EB489",
                                       "Active"="#FFA756",
-                                "Acute Crisis"="#840000")) + 
-        theme_hdx()
+                                "Acute Crisis"="#840000"))
     } else if(input$baseline_sel == "Change in Cases"){
         data_df %>%
         ggplot(aes(x = DateWeek, y = `Case Change`, color = Priority_fac)) + 
@@ -115,8 +114,7 @@ output$priority <- renderPlot({
              x = "Week", y = "Change in Cases", color = "Priority Level") + 
         scale_color_manual(values = c("Preparedness" = "#3EB489",
                                       "Active"="#FFA756",
-                                "Acute Crisis"="#840000")) + 
-        theme_hdx()
+                                "Acute Crisis"="#840000"))
     } else {
         data_df %>%
         ggplot(aes(x = DateWeek, y = `Cases Confirmed`, color = Priority_fac)) + 
@@ -125,8 +123,7 @@ output$priority <- renderPlot({
              x = "Week", y = "Cases Confirmed", color = "Priority Level") + 
         scale_color_manual(values = c("Preparedness" = "#3EB489",
                                       "Active"="#FFA756",
-                                "Acute Crisis"="#840000")) + 
-        theme_hdx()
+                                "Acute Crisis"="#840000"))
     }
     
     
