@@ -35,16 +35,15 @@ prioritisation_file <- file.path(input_dir, "Prioritisation country list.xlsx")
 sheet_names <- excel_sheets(prioritisation_file)
 prioritisation_list <- data.frame()
 
-for(i in sheet_names){
-    Prioritisation_country_list <- read_excel(prioritisation_file, sheet = i)
-    Prioritisation_country_list["Week"] <- i
-    prioritisation_list <- bind_rows(prioritisation_list, Prioritisation_country_list)
-}
+prioritisation_list <- list_rbind(purrr::map(
+  .x = sheet_names,
+  .f = \(i) read_excel(prioritisation_file, sheet = i)
+))
 
 # cleaning up prioritisation list
 prioritisation_list_final <- prioritisation_list %>%
     select(Country, `Priority category`, `Priority level`,Week) %>%
-    mutate_at(c("Priority category", "Priority level"), ~replace_na(.,"")) %>%
+    mutate(across(c("Priority category", "Priority level"), ~replace_na(.,""))) %>%
     mutate("Priority" = paste0(`Priority category`, `Priority level`),
            "WeekNumber" = as.numeric(gsub("\\D", "", Week)),
            "iso3" = countrycode(Country, 'country.name', 'iso3c'),
@@ -56,12 +55,14 @@ unique(prioritisation_list_final$Priority)
 prioritisation_list_df <- prioritisation_list_final %>%
     group_by(iso3) %>%
     arrange(Week) %>%
-    mutate("Priority_num" = if_else(Priority == "Preparedness", 1, 
-                                    if_else(Priority == "Active", 2, 
-                                            if_else(Priority == "Acute Crisis", 3, NA))),
-           "Trend" = if_else(Priority_num == dplyr::lag(Priority_num), "Stable", 
-                             if_else(Priority_num > dplyr::lag(Priority_num), "Up",
-                                     if_else(Priority_num < dplyr::lag(Priority_num), "Down", "")))) %>%
+    mutate("Priority_num" = case_when(Priority == "Preparedness" ~ 1, 
+                                      Priority == "Active" ~ 2, 
+                                      Priority == "Acute Crisis" ~ 3, 
+                                      .default = NA),
+           "Trend" = case_when(Priority_num == dplyr::lag(Priority_num)~ "Stable",
+                               Priority_num > dplyr::lag(Priority_num)~ "Up",
+                               Priority_num < dplyr::lag(Priority_num)~ "Down",
+                               .default = "")) %>%
     ungroup()
 
 # combining into one df
