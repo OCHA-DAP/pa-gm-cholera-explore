@@ -14,7 +14,7 @@ library(tidyverse)
 library(readxl)
 library(countrycode)
 library(gghdx)
-load_source_sans_3()
+gghdx()
 
 input_dir <- file.path(
   Sys.getenv("CERF_GM_DIR"),
