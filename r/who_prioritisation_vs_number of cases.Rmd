@@ -32,13 +32,11 @@ final_data_2023$iso3 <- countrycode(final_data_2023$Country, 'country.name', 'is
 
 
 prioritisation_file <- file.path(input_dir, "Prioritisation country list.xlsx")
-sheet_names <- excel_sheets(prioritisation_file)
-prioritisation_list <- data.frame()
-
-prioritisation_list <- list_rbind(purrr::map(
-  .x = sheet_names,
-  .f = \(i) read_excel(prioritisation_file, sheet = i)
-))
+sheets_list <- excel_sheets(prioritisation_file) %>%
+  set_names() %>%
+  map(~ read_excel(prioritisation_file, sheet = .x))
+prioritisation_list <- bind_rows(sheets_list, .id = "sheet_name") %>%
+  rename(Week = sheet_name)
 
 # cleaning up prioritisation list
 prioritisation_list_final <- prioritisation_list %>%
