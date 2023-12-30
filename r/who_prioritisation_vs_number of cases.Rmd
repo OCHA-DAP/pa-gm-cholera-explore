@@ -96,34 +96,23 @@ output$priority <- renderPlot({
         mutate("Trend" = factor(Trend, levels = c("Down", "Stable", "Up")),
                "DateWeek" = as.Date("2023-01-01") + weeks(WeekNumber)-6,
                "Priority_fac" = factor(Priority, levels = c("Preparedness", "Active", "Acute Crisis")))
+    plot_fxn <- function(data_df, y_column, title, ylabel){
+      data_df %>%
+        ggplot(aes(x = DateWeek, y = !!sym(y_column), color = Priority_fac)) + 
+        geom_point(size=1.8) +
+        labs(title = paste0(title, data_df$Country.x[1]), 
+             x = "Week", y = ylabel, color = "Priority Level") + 
+        scale_color_manual(values = c("Preparedness" = "#3EB489",
+                                      "Active"="#FFA756",
+                                      "Acute Crisis"="#840000"))
+    }
     
     if(input$baseline_sel == "Total Cases"){
-        data_df %>%
-        ggplot(aes(x = DateWeek, y = `Total cases`, color = Priority_fac)) + 
-        geom_point(size=1.8) +
-        labs(title = paste0("Total Number of Cases with Priority Level-", data_df$Country.x[1]), 
-             x = "Week", y = "Total Cases", color = "Priority Level") + 
-        scale_color_manual(values = c("Preparedness" = "#3EB489",
-                                      "Active"="#FFA756",
-                                "Acute Crisis"="#840000"))
+      plot_fxn(data_df, y_column = "Total cases", title = "Total Number of Cases with Priority Level-", ylabel = "Total Cases")
     } else if(input$baseline_sel == "Change in Cases"){
-        data_df %>%
-        ggplot(aes(x = DateWeek, y = `Case Change`, color = Priority_fac)) + 
-        geom_point(size=1.8) +
-        labs(title = paste0("Change in Cases with Priority Level-", data_df$Country.x[1]), 
-             x = "Week", y = "Change in Cases", color = "Priority Level") + 
-        scale_color_manual(values = c("Preparedness" = "#3EB489",
-                                      "Active"="#FFA756",
-                                "Acute Crisis"="#840000"))
+      plot_fxn(data_df, y_column = "Case Change", title = "Change in Cases with Priority Level-", ylabel = "Change in Cases")
     } else {
-        data_df %>%
-        ggplot(aes(x = DateWeek, y = `Cases Confirmed`, color = Priority_fac)) + 
-        geom_point(size=1.8) +
-        labs(title = paste0("Cases Confirmed with Priority Level-", data_df$Country.x[1]), 
-             x = "Week", y = "Cases Confirmed", color = "Priority Level") + 
-        scale_color_manual(values = c("Preparedness" = "#3EB489",
-                                      "Active"="#FFA756",
-                                "Acute Crisis"="#840000"))
+      plot_fxn(data_df, y_column = "Cases Confirmed", title = "Cases Confirmed with Priority Level-", ylabel = "Cases Confirmed")
     }
     
     
