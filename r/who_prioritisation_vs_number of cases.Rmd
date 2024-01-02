@@ -1,0 +1,121 @@
+---
+title: "Global Cholera Analysis"
+author: "Pauline"
+date: "`r Sys.Date()`"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# libraries
+library(tidyverse)
+library(readxl)
+library(countrycode)
+library(gghdx)
+gghdx()
+
+input_dir <- file.path(
+  Sys.getenv("CERF_GM_DIR"),
+  "cholera_exploration",
+  "inputs"
+)
+
+# reading in files
+final_data_for_powerbi_with_kpi <- read_csv(file.path(input_dir, "final_data_for_powerbi_with_kpi.csv"))
+# filter for only the 2023 values
+final_data_2023 <- final_data_for_powerbi_with_kpi %>%
+    filter(WeekDate >= "2023-04-10" & str_detect(Event, "^Cholera"))
+unique(final_data_2023$Country)
+final_data_2023$iso3 <- countrycode(final_data_2023$Country, 'country.name', 'iso3c')
+
+
+prioritisation_file <- file.path(input_dir, "Prioritisation country list.xlsx")
+sheets_list <- excel_sheets(prioritisation_file) %>%
+  set_names() %>%
+  map(~ read_excel(prioritisation_file, sheet = .x))
+prioritisation_list <- bind_rows(sheets_list, .id = "sheet_name") %>%
+  rename(Week = sheet_name)
+
+# cleaning up prioritisation list
+prioritisation_list_final <- prioritisation_list %>%
+    select(Country, `Priority category`, `Priority level`,Week) %>%
+    mutate(across(c("Priority category", "Priority level"), ~replace_na(.,""))) %>%
+    mutate("Priority" = paste0(`Priority category`, `Priority level`),
+           "WeekNumber" = as.numeric(gsub("\\D", "", Week)),
+           "iso3" = countrycode(Country, 'country.name', 'iso3c'),
+           "Priority" = str_replace(Priority, "Acute Risk", "Acute Crisis"))
+    
+unique(prioritisation_list_final$Priority)
+
+# check for changes in priority
+prioritisation_list_df <- prioritisation_list_final %>%
+    group_by(iso3) %>%
+    arrange(Week) %>%
+    mutate("Priority_num" = case_when(Priority == "Preparedness" ~ 1, 
+                                      Priority == "Active" ~ 2, 
+                                      Priority == "Acute Crisis" ~ 3, 
+                                      .default = NA),
+           "Trend" = case_when(Priority_num == dplyr::lag(Priority_num)~ "Stable",
+                               Priority_num > dplyr::lag(Priority_num)~ "Up",
+                               Priority_num < dplyr::lag(Priority_num)~ "Down",
+                               .default = "")) %>%
+    ungroup()
+
+# combining into one df
+combined_df <- merge(prioritisation_list_df, 
+                     final_data_2023, by = c("iso3", "WeekNumber"), all = TRUE)
+
+trend_obj <- c("Down", "Stable", "Up")
+priority_obj <- c("Preparedness", "Active", "Acute Crisis")
+
+```
+
+For this analysis, we aim to:
+
+1. Identify if shifts in priority are related to an increase in cases.
+2. Identify situations to flag with the global list.
+3. Think of ways to combine the two data sets.
+ 
+ 
+## Comparing cases and priority levels 
+
+
+```{r, echo=FALSE}
+inputPanel(
+  selectInput("iso3_count", label = "Select Country:",
+              choices = unique(combined_df$iso3)),
+  selectInput("baseline_sel", label = "Select Data Point:",
+              choices = c("Total Cases", "Change in Cases", "Cases Confirmed"))
+)
+plotOutput("priority")
+output$priority <- renderPlot({
+    data_df <- combined_df %>%
+        filter((iso3 %in% input$iso3_count) & !is.na(Priority)) %>%
+        mutate("Trend" = factor(Trend, levels = c("Down", "Stable", "Up")),
+               "DateWeek" = as.Date("2023-01-01") + weeks(WeekNumber)-6,
+               "Priority_fac" = factor(Priority, levels = c("Preparedness", "Active", "Acute Crisis")))
+    plot_fxn <- function(data_df, y_column, title, ylabel){
+      data_df %>%
+        ggplot(aes(x = DateWeek, y = !!sym(y_column), color = Priority_fac)) + 
+        geom_point(size=1.8) +
+        labs(title = paste0(title, data_df$Country.x[1]), 
+             x = "Week", y = ylabel, color = "Priority Level") + 
+        scale_color_manual(values = c("Preparedness" = "#3EB489",
+                                      "Active"="#FFA756",
+                                      "Acute Crisis"="#840000"))
+    }
+    
+    if(input$baseline_sel == "Total Cases"){
+      plot_fxn(data_df, y_column = "Total cases", title = "Total Number of Cases with Priority Level-", ylabel = "Total Cases")
+    } else if(input$baseline_sel == "Change in Cases"){
+      plot_fxn(data_df, y_column = "Case Change", title = "Change in Cases with Priority Level-", ylabel = "Change in Cases")
+    } else {
+      plot_fxn(data_df, y_column = "Cases Confirmed", title = "Cases Confirmed with Priority Level-", ylabel = "Cases Confirmed")
+    }
+    
+    
+
+})
+```
